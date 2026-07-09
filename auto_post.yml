@@ -1,0 +1,32 @@
+name: Auto Post TikTok to Benhviencantho.com
+
+on:
+  schedule:
+    # Chạy tự động mỗi 2 tiếng 1 lần (đều đặn 24/7)
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    # Bấm nút kích hoạt thủ công bất cứ lúc nào trên GitHub Actions
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install requests feedparser
+
+      - name: Run Auto Post Script for Benhviencantho.com
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USERNAME: ${{ secrets.WP_USERNAME }}
+          WP_PASSWORD: ${{ secrets.WP_PASSWORD }}
+        run: python main.py
