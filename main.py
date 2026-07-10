@@ -16,39 +16,65 @@ RSS_FEED_URL = "https://script.google.com/macros/s/AKfycbwGNOdHsbfP21P3HoLYHr29V
 
 def get_existing_wp_posts():
     """
-    Trả về danh sách bài viết cũ kèm thông tin ID và featured_media để kiểm tra.
-    Nếu bài cũ bị mất ảnh đại diện (featured_media == 0), hệ thống sẽ tự động cập nhật lại ảnh.
+    Trả về danh sách bài viết cũ kèm thông tin ID, featured_media và tiêu đề chuẩn hóa để đối chiếu.
+    1. Chống lặp bài 2 lớp: Kiểm tra trùng theo cả Video ID lẫn Tiêu đề bài viết.
+    2. Tự động dọn dẹp bài trùng lặp: Nếu phát hiện trên website có 2-3 bài bị trùng tiêu đề,
+       hệ thống tự động xóa bài trùng (giữ lại bài gốc đầu tiên) để làm sạch website.
+    3. Phục hồi ảnh: Nếu bài gốc bị mất ảnh (featured_media == 0), tự động cập nhật lại ảnh.
     """
     if not WP_URL or not WP_USERNAME or not WP_PASSWORD:
         print("❌ Lỗi cấu hình: Thiếu biến Secret WP_URL, WP_USERNAME hoặc WP_PASSWORD.")
-        return {}
+        return {}, {}
     session = requests.Session()
     session.auth = (WP_USERNAME, WP_PASSWORD)
-    posts_map = {}
+    posts_by_id = {}
+    seen_titles_map = {}
+    
     try:
         res = session.get(f"{WP_URL}?per_page=100", timeout=20)
         if res.status_code == 200:
             posts = res.json()
             print(f"📚 Đã kết nối WordPress Benhviencantho.com thành công. Đang có {len(posts)} bài viết trên web.")
+            
             for p in posts:
                 content = p.get("content", {}).get("rendered", "")
                 title = p.get("title", {}).get("rendered", "")
                 post_id = p.get("id")
                 featured_media = p.get("featured_media", 0)
                 
+                # Chuẩn hóa tiêu đề để so sánh chính xác (chỉ lấy 30 ký tự đầu không dấu/không tag)
+                clean_title_key = re.sub(r'\[Y Khoa Cần Thơ\]|\s+|#.*$', ' ', title).strip().lower()[:30]
+                
+                # 💡 TỰ ĐỘNG DỌN DẸP BÀI TRÙNG LẶP CŨ TRÊN WORDPRESS:
+                # Nếu tiêu đề này đã từng xuất hiện ở bài viết khác, đây chính là bài bị tạo trùng lúc trước!
+                if clean_title_key and clean_title_key in seen_titles_map:
+                    print(f"🗑️ Phát hiện bài viết bị lặp lại trên web (ID {post_id}: '{title[:40]}...') -> Đang tự động dọn dẹp xóa bỏ...")
+                    try:
+                        del_res = session.delete(f"{WP_URL}/{post_id}?force=true", timeout=15)
+                        if del_res.status_code in [200, 201]:
+                            print(f"✅ Đã dọn dẹp thành công bài viết trùng lặp ID {post_id}.")
+                            continue
+                    except Exception as err:
+                        print(f"⚠️ Lỗi khi xóa bài trùng ID {post_id}: {err}")
+                
+                # Lưu vào map tiêu đề đã thấy
+                if clean_title_key:
+                    seen_titles_map[clean_title_key] = {"post_id": post_id, "featured_media": featured_media, "title": title}
+                
                 # Tìm Video ID trong nội dung hoặc tiêu đề
                 for match in re.finditer(r'/video/(\d+)|data-video-id=["\'](\d+)["\']', content + title):
                     vid = match.group(1) or match.group(2)
                     if vid:
-                        posts_map[vid] = {"post_id": post_id, "featured_media": featured_media, "title": title}
-            return posts_map
+                        posts_by_id[vid] = {"post_id": post_id, "featured_media": featured_media, "title": title}
+                        
+            return posts_by_id, seen_titles_map
         elif res.status_code == 401:
             print("❌ LỖI 401 WORDPRESS (KHI ĐỌC BÀI): Sai Username hoặc Application Password!")
         else:
             print(f"⚠️ Không thể đọc danh sách bài cũ từ WordPress (Status {res.status_code}): {res.text[:100]}")
     except Exception as e:
         print(f"⚠️ Lỗi kết nối kiểm tra bài đăng cũ: {e}")
-    return {}
+    return {}, {}
 
 def get_available_gemini_models():
     if not GEMINI_API_KEY:
@@ -270,7 +296,7 @@ def main():
         return
         
     print(f"🎯 Tìm thấy {len(feed.entries)} video trong link RSS của Benhviencantho.com.")
-    existing_posts_map = get_existing_wp_posts()
+    posts_by_id, seen_titles_map = get_existing_wp_posts()
     
     models_list = get_available_gemini_models()
     if not models_list:
@@ -303,10 +329,12 @@ def main():
         if not video_id:
             continue
             
-        # Kiểm tra xem bài viết đã tồn tại trên WordPress chưa
-        if video_id in existing_posts_map:
-            old_post = existing_posts_map[video_id]
-            # 💡 TỰ ĐỘNG KHẮC PHỤC: Nếu bài cũ bị mất ảnh đại diện (featured_media == 0) -> Tự tải và bổ sung ảnh ngay!
+        # Chuẩn hóa tiêu đề từ RSS để đối chiếu 2 lớp
+        entry_title_key = re.sub(r'\[Y Khoa Cần Thơ\]|\s+|#.*$', ' ', title).strip().lower()[:30]
+        
+        # 🛡️ KIỂM TRA TRÙNG LẶP 2 LỚP: Nếu trùng Video ID HOẶC trùng Tiêu đề bài viết -> Bỏ qua ngay!
+        if video_id in posts_by_id:
+            old_post = posts_by_id[video_id]
             if old_post.get("featured_media", 0) == 0 and thumbnail_url:
                 print(f"🛠️ Phát hiện bài viết cũ '{title[:35]}...' bị mất ảnh đại diện -> Đang tải bổ sung ảnh...")
                 media_id, _ = upload_image_to_wp(thumbnail_url)
@@ -314,7 +342,16 @@ def main():
                     updated_image_count += 1
                     time.sleep(2)
             else:
-                print(f"⏩ Video ID {video_id} ({title[:30]}...) đã đăng trên web & đã có ảnh, bỏ qua.")
+                print(f"⏩ Video ID {video_id} ('{title[:30]}...') đã tồn tại trên web & đã có ảnh, bỏ qua.")
+            continue
+        elif entry_title_key and entry_title_key in seen_titles_map:
+            old_post = seen_titles_map[entry_title_key]
+            print(f"⏩ Bài viết có tiêu đề '{title[:35]}...' đã tồn tại trên web (ID {old_post['post_id']}), bỏ qua để chống trùng lặp.")
+            if old_post.get("featured_media", 0) == 0 and thumbnail_url:
+                media_id, _ = upload_image_to_wp(thumbnail_url)
+                if media_id and update_wp_post_featured_media(old_post["post_id"], media_id):
+                    updated_image_count += 1
+                    time.sleep(2)
             continue
             
         print(f"✍️ Đang viết bài y khoa chuẩn SEO cho video mới: {title[:50]}...")
