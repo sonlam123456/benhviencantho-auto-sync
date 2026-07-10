@@ -15,24 +15,40 @@ WP_PASSWORD = os.environ.get("WP_PASSWORD")
 RSS_FEED_URL = "https://script.google.com/macros/s/AKfycbwGNOdHsbfP21P3HoLYHr29VgUS0w2YXUW-13WrhMfnxqzqr-CAWP7RJybGSVMzCDkF/exec"
 
 def get_existing_wp_posts():
+    """
+    Trả về danh sách bài viết cũ kèm thông tin ID và featured_media để kiểm tra.
+    Nếu bài cũ bị mất ảnh đại diện (featured_media == 0), hệ thống sẽ tự động cập nhật lại ảnh.
+    """
     if not WP_URL or not WP_USERNAME or not WP_PASSWORD:
         print("❌ Lỗi cấu hình: Thiếu biến Secret WP_URL, WP_USERNAME hoặc WP_PASSWORD.")
-        return []
+        return {}
     session = requests.Session()
     session.auth = (WP_USERNAME, WP_PASSWORD)
+    posts_map = {}
     try:
         res = session.get(f"{WP_URL}?per_page=100", timeout=20)
         if res.status_code == 200:
             posts = res.json()
             print(f"📚 Đã kết nối WordPress Benhviencantho.com thành công. Đang có {len(posts)} bài viết trên web.")
-            return [p["content"]["rendered"] for p in posts] + [p["title"]["rendered"] for p in posts]
+            for p in posts:
+                content = p.get("content", {}).get("rendered", "")
+                title = p.get("title", {}).get("rendered", "")
+                post_id = p.get("id")
+                featured_media = p.get("featured_media", 0)
+                
+                # Tìm Video ID trong nội dung hoặc tiêu đề
+                for match in re.finditer(r'/video/(\d+)|data-video-id=["\'](\d+)["\']', content + title):
+                    vid = match.group(1) or match.group(2)
+                    if vid:
+                        posts_map[vid] = {"post_id": post_id, "featured_media": featured_media, "title": title}
+            return posts_map
         elif res.status_code == 401:
             print("❌ LỖI 401 WORDPRESS (KHI ĐỌC BÀI): Sai Username hoặc Application Password!")
         else:
             print(f"⚠️ Không thể đọc danh sách bài cũ từ WordPress (Status {res.status_code}): {res.text[:100]}")
     except Exception as e:
         print(f"⚠️ Lỗi kết nối kiểm tra bài đăng cũ: {e}")
-    return []
+    return {}
 
 def get_available_gemini_models():
     if not GEMINI_API_KEY:
@@ -66,7 +82,6 @@ def upload_image_to_wp(image_url):
     """
     Tải ảnh từ link TikTok CDN (trích xuất từ RSS description/enclosure) về và upload thẳng
     lên thư viện Media của Benhviencantho.com để làm ảnh đại diện (featured_media).
-    Chống lỗi ảnh trắng (src="") và chống lỗi 403 hotlink từ TikTok CDN.
     """
     if not image_url or not WP_URL or not WP_USERNAME or not WP_PASSWORD:
         return None, None
@@ -104,6 +119,21 @@ def upload_image_to_wp(image_url):
         print(f"⚠️ Lỗi xử lý ảnh media: {e}")
         
     return None, None
+
+def update_wp_post_featured_media(post_id, media_id):
+    """Cập nhật bổ sung ảnh đại diện cho các bài viết bị lỗi/trắng ảnh trước đó"""
+    if not WP_URL or not WP_USERNAME or not WP_PASSWORD or not post_id or not media_id:
+        return False
+    session = requests.Session()
+    session.auth = (WP_USERNAME, WP_PASSWORD)
+    try:
+        res = session.post(f"{WP_URL}/{post_id}", json={"featured_media": media_id}, timeout=20)
+        if res.status_code in [200, 201]:
+            print(f"✅ ĐÃ TỰ ĐỘNG BỔ SUNG ẢNH ĐẠI DIỆN CHO BÀI VIẾT CŨ (ID: {post_id}, Media ID: {media_id})")
+            return True
+    except Exception as e:
+        print(f"⚠️ Lỗi cập nhật ảnh cho bài viết cũ: {e}")
+    return False
 
 def extract_video_id(url):
     match = re.search(r'/video/(\d+)', url)
@@ -240,7 +270,7 @@ def main():
         return
         
     print(f"🎯 Tìm thấy {len(feed.entries)} video trong link RSS của Benhviencantho.com.")
-    existing_content = get_existing_wp_posts()
+    existing_posts_map = get_existing_wp_posts()
     
     models_list = get_available_gemini_models()
     if not models_list:
@@ -248,9 +278,10 @@ def main():
         return
     
     posted_count = 0
-    # Xử lý tối đa 15 bài trong mỗi lần chạy
+    updated_image_count = 0
+    
     for entry in feed.entries:
-        if posted_count >= 15:
+        if posted_count + updated_image_count >= 15:
             break
         url = getattr(entry, 'link', '')
         title = getattr(entry, 'title', '')
@@ -263,25 +294,30 @@ def main():
         elif hasattr(entry, 'enclosures') and len(entry.enclosures) > 0:
             thumbnail_url = entry.enclosures[0]['url']
             
-        # Nếu chưa có, tự động dùng Regex bóc tách link ảnh bên trong thẻ <description> / <summary> của RSS
         if not thumbnail_url:
             desc_text = getattr(entry, 'summary', '') or getattr(entry, 'description', '')
             match_img = re.search(r'<img[^>]+src=["\'](https?://[^"\']+)["\']', desc_text, re.IGNORECASE)
             if match_img:
                 thumbnail_url = match_img.group(1)
-                print(f"🔎 Đã trích xuất được link ảnh thumbnail từ RSS description: {thumbnail_url[:60]}...")
-            
+                
         if not video_id:
             continue
             
-        is_posted = any(video_id in str(c) for c in existing_content)
-        if is_posted:
-            print(f"⏩ Video ID {video_id} ({title[:30]}...) đã đăng trên web rồi, bỏ qua.")
+        # Kiểm tra xem bài viết đã tồn tại trên WordPress chưa
+        if video_id in existing_posts_map:
+            old_post = existing_posts_map[video_id]
+            # 💡 TỰ ĐỘNG KHẮC PHỤC: Nếu bài cũ bị mất ảnh đại diện (featured_media == 0) -> Tự tải và bổ sung ảnh ngay!
+            if old_post.get("featured_media", 0) == 0 and thumbnail_url:
+                print(f"🛠️ Phát hiện bài viết cũ '{title[:35]}...' bị mất ảnh đại diện -> Đang tải bổ sung ảnh...")
+                media_id, _ = upload_image_to_wp(thumbnail_url)
+                if media_id and update_wp_post_featured_media(old_post["post_id"], media_id):
+                    updated_image_count += 1
+                    time.sleep(2)
+            else:
+                print(f"⏩ Video ID {video_id} ({title[:30]}...) đã đăng trên web & đã có ảnh, bỏ qua.")
             continue
             
-        print(f"✍️ Đang viết bài y khoa chuẩn SEO cho video: {title[:50]}...")
-        
-        # Tải ảnh thumbnail về máy chủ WordPress để làm ảnh đại diện + chèn vào đầu bài viết
+        print(f"✍️ Đang viết bài y khoa chuẩn SEO cho video mới: {title[:50]}...")
         media_id, local_img_url = upload_image_to_wp(thumbnail_url)
         
         article_html = generate_seo_article(title, url, video_id, local_img_url, models_list)
@@ -290,10 +326,7 @@ def main():
                 posted_count += 1
             time.sleep(5)
             
-    if posted_count == 0:
-        print("ℹ️ Hoàn tất chạy: Tất cả video trong RSS đều đã được đăng lên Benhviencantho.com, không có bài mới.")
-    else:
-        print(f"🎉 Hoàn tất xuất sắc! Đã đăng thành công {posted_count} bài viết y khoa mới lên Benhviencantho.com.")
+    print(f"ℹ️ Hoàn tất chạy! Kết quả: Đăng mới {posted_count} bài viết, và Tự động phục hồi ảnh cho {updated_image_count} bài viết cũ.")
 
 if __name__ == "__main__":
     main()
