@@ -64,8 +64,9 @@ def get_available_gemini_models():
 
 def upload_image_to_wp(image_url):
     """
-    Tải ảnh từ link TikTok CDN về và upload thẳng lên thư viện Media của Benhviencantho.com
-    để chống lỗi 403 hotlink và tối ưu hình ảnh chuẩn SEO.
+    Tải ảnh từ link TikTok CDN (trích xuất từ RSS description/enclosure) về và upload thẳng
+    lên thư viện Media của Benhviencantho.com để làm ảnh đại diện (featured_media).
+    Chống lỗi ảnh trắng (src="") và chống lỗi 403 hotlink từ TikTok CDN.
     """
     if not image_url or not WP_URL or not WP_USERNAME or not WP_PASSWORD:
         return None, None
@@ -75,9 +76,10 @@ def upload_image_to_wp(image_url):
     
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "Referer": "https://www.tiktok.com/"
         }
-        img_res = requests.get(image_url, headers=headers, timeout=15)
+        img_res = requests.get(image_url, headers=headers, timeout=20)
         if img_res.status_code != 200:
             print(f"⚠️ Không thể tải ảnh gốc từ TikTok (Status {img_res.status_code})")
             return None, None
@@ -208,7 +210,7 @@ def create_wp_post(clean_title, content, media_id=None):
     try:
         res = session.post(WP_URL, json=payload, timeout=30)
         if res.status_code in [200, 201]:
-            print(f"✅ ĐÃ ĐĂNG THÀNH CÔNG BÀI LÊN BENHVIENCANTHO.COM: {clean_title[:55]}")
+            print(f"✅ ĐÃ ĐĂNG THÀNH CÔNG BÀI LÊN BENHVIENCANTHO.COM: {clean_title[:55]} (Media ID: {media_id})")
             return True
         elif res.status_code == 401:
             print("❌ LỖI 401 WORDPRESS: Tài khoản trong Secret WP_USERNAME không có quyền đăng bài (Role phải là Administrator hoặc Author)!")
@@ -254,11 +256,20 @@ def main():
         title = getattr(entry, 'title', '')
         video_id = extract_video_id(url)
         
+        # 🎯 TRÍCH XUẤT THUMBNAIL TỪ DESCRIPTION HOẶC ENCLOSURES
         thumbnail_url = ""
         if hasattr(entry, 'media_thumbnail') and len(entry.media_thumbnail) > 0:
             thumbnail_url = entry.media_thumbnail[0]['url']
         elif hasattr(entry, 'enclosures') and len(entry.enclosures) > 0:
             thumbnail_url = entry.enclosures[0]['url']
+            
+        # Nếu chưa có, tự động dùng Regex bóc tách link ảnh bên trong thẻ <description> / <summary> của RSS
+        if not thumbnail_url:
+            desc_text = getattr(entry, 'summary', '') or getattr(entry, 'description', '')
+            match_img = re.search(r'<img[^>]+src=["\'](https?://[^"\']+)["\']', desc_text, re.IGNORECASE)
+            if match_img:
+                thumbnail_url = match_img.group(1)
+                print(f"🔎 Đã trích xuất được link ảnh thumbnail từ RSS description: {thumbnail_url[:60]}...")
             
         if not video_id:
             continue
@@ -270,6 +281,7 @@ def main():
             
         print(f"✍️ Đang viết bài y khoa chuẩn SEO cho video: {title[:50]}...")
         
+        # Tải ảnh thumbnail về máy chủ WordPress để làm ảnh đại diện + chèn vào đầu bài viết
         media_id, local_img_url = upload_image_to_wp(thumbnail_url)
         
         article_html = generate_seo_article(title, url, video_id, local_img_url, models_list)
