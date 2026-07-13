@@ -31,47 +31,59 @@ def get_existing_wp_posts():
     seen_titles_map = {}
     
     try:
-        res = session.get(f"{WP_URL}?per_page=100", timeout=20)
-        if res.status_code == 200:
-            posts = res.json()
-            print(f"📚 Đã kết nối WordPress Benhviencantho.com thành công. Đang có {len(posts)} bài viết trên web.")
-            
-            for p in posts:
-                content = p.get("content", {}).get("rendered", "")
-                title = p.get("title", {}).get("rendered", "")
-                post_id = p.get("id")
-                featured_media = p.get("featured_media", 0)
+        total_fetched = 0
+        for page in range(1, 4):
+            res = session.get(f"{WP_URL}?per_page=100&page={page}", timeout=20)
+            if res.status_code == 200:
+                posts = res.json()
+                if not posts:
+                    break
+                total_fetched += len(posts)
                 
-                # Chuẩn hóa tiêu đề để so sánh chính xác (chỉ lấy 30 ký tự đầu không dấu/không tag)
-                clean_title_key = re.sub(r'\[Y Khoa Cần Thơ\]|\s+|#.*$', ' ', title).strip().lower()[:30]
-                
-                # 💡 TỰ ĐỘNG DỌN DẸP BÀI TRÙNG LẶP CŨ TRÊN WORDPRESS:
-                # Nếu tiêu đề này đã từng xuất hiện ở bài viết khác, đây chính là bài bị tạo trùng lúc trước!
-                if clean_title_key and clean_title_key in seen_titles_map:
-                    print(f"🗑️ Phát hiện bài viết bị lặp lại trên web (ID {post_id}: '{title[:40]}...') -> Đang tự động dọn dẹp xóa bỏ...")
-                    try:
-                        del_res = session.delete(f"{WP_URL}/{post_id}?force=true", timeout=15)
-                        if del_res.status_code in [200, 201]:
-                            print(f"✅ Đã dọn dẹp thành công bài viết trùng lặp ID {post_id}.")
-                            continue
-                    except Exception as err:
-                        print(f"⚠️ Lỗi khi xóa bài trùng ID {post_id}: {err}")
-                
-                # Lưu vào map tiêu đề đã thấy
-                if clean_title_key:
-                    seen_titles_map[clean_title_key] = {"post_id": post_id, "featured_media": featured_media, "title": title}
-                
-                # Tìm Video ID trong nội dung hoặc tiêu đề
-                for match in re.finditer(r'/video/(\d+)|data-video-id=["\'](\d+)["\']', content + title):
-                    vid = match.group(1) or match.group(2)
+                for p in posts:
+                    content = p.get("content", {}).get("rendered", "")
+                    title = p.get("title", {}).get("rendered", "")
+                    post_id = p.get("id")
+                    featured_media = p.get("featured_media", 0)
+                    
+                    # Chuẩn hóa tiêu đề để so sánh chính xác (chỉ lấy 30 ký tự đầu không dấu/không tag)
+                    clean_title_key = re.sub(r'\[Y Khoa Cần Thơ\]|\s+|#.*$', ' ', title).strip().lower()[:30]
+                    
+                    # 💡 TỰ ĐỘNG DỌN DẸP BÀI TRÙNG LẶP CŨ TRÊN WORDPRESS:
+                    if clean_title_key and clean_title_key in seen_titles_map:
+                        print(f"🗑️ Phát hiện bài viết bị lặp lại trên web (ID {post_id}: '{title[:40]}...') -> Đang tự động dọn dẹp xóa bỏ...")
+                        try:
+                            del_res = session.delete(f"{WP_URL}/{post_id}?force=true", timeout=15)
+                            if del_res.status_code in [200, 201]:
+                                print(f"✅ Đã dọn dẹp thành công bài viết trùng lặp ID {post_id}.")
+                                continue
+                        except Exception as err:
+                            print(f"⚠️ Lỗi khi xóa bài trùng ID {post_id}: {err}")
+                    
+                    # Tìm Video ID trong nội dung hoặc tiêu đề
+                    vid = None
+                    for match in re.finditer(r'/video/(\d+)|data-video-id=["\'](\d+)["\']', content + title):
+                        vid = match.group(1) or match.group(2)
+                        if vid:
+                            break
+                            
+                    post_data = {"post_id": post_id, "featured_media": featured_media, "title": title, "content": content, "vid": vid}
+                    
+                    if clean_title_key:
+                        seen_titles_map[clean_title_key] = post_data
                     if vid:
-                        posts_by_id[vid] = {"post_id": post_id, "featured_media": featured_media, "title": title}
-                        
-            return posts_by_id, seen_titles_map
-        elif res.status_code == 401:
-            print("❌ LỖI 401 WORDPRESS (KHI ĐỌC BÀI): Sai Username hoặc Application Password!")
-        else:
-            print(f"⚠️ Không thể đọc danh sách bài cũ từ WordPress (Status {res.status_code}): {res.text[:100]}")
+                        posts_by_id[vid] = post_data
+            elif res.status_code == 400 and "rest_post_invalid_page_number" in res.text:
+                break
+            elif res.status_code == 401:
+                print("❌ LỖI 401 WORDPRESS (KHI ĐỌC BÀI): Sai Username hoặc Application Password!")
+                break
+            else:
+                print(f"⚠️ Trang {page}: Không thể đọc danh sách bài từ WordPress ({res.status_code})")
+                break
+                
+        print(f"📚 Đã kết nối WordPress Benhviencantho.com thành công. Đang quản lý {total_fetched} bài viết trên web.")
+        return posts_by_id, seen_titles_map
     except Exception as e:
         print(f"⚠️ Lỗi kết nối kiểm tra bài đăng cũ: {e}")
     return {}, {}
@@ -356,8 +368,34 @@ def main():
     posted_count = 0
     updated_image_count = 0
     
+    # 🛠️ QUÉT VÀ TỰ ĐỘNG KHÔI PHỤC ẢNH CHO CÁC BÀI VIẾT CŨ TRÊN WORDPRESS (Sửa tối đa 100 bài/lần chạy)
+    print(f"🛠️ Đang quét tự động danh sách bài viết cũ trên Benhviencantho.com để phát hiện & sửa triệt để lỗi ảnh...")
+    checked_ids = set()
+    for post_info in list(posts_by_id.values()) + list(seen_titles_map.values()):
+        if updated_image_count >= 100:
+            print("🛑 Đã sửa khôi phục 100 bài viết trong 1 lượt chạy (giới hạn an toàn). Các bài lỗi còn lại sẽ tự khôi phục tiếp ở lượt chạy sau.")
+            break
+        post_id = post_info["post_id"]
+        if post_id in checked_ids:
+            continue
+        checked_ids.add(post_id)
+        
+        feat_id = post_info.get("featured_media", 0)
+        content = post_info.get("content", "")
+        title = post_info.get("title", "")
+        vid = post_info.get("vid")
+        
+        # Nếu bài viết không có ảnh đại diện HOẶC trong nội dung có link tiktokcdn bị lỗi/hết hạn
+        if feat_id == 0 or "tiktokcdn" in content:
+            print(f"🛠️ Phát hiện bài viết ID {post_id} ('{title[:35]}...') bị lỗi/mất ảnh -> Đang tự động khôi phục từ TikWM API...")
+            media_id, local_url = upload_image_to_wp("", vid)
+            if media_id and update_wp_post_featured_media(post_id, media_id, local_url):
+                updated_image_count += 1
+                post_info["featured_media"] = media_id
+                time.sleep(1.5)
+    
     for entry in feed.entries:
-        if posted_count + updated_image_count >= 15:
+        if posted_count >= 15:
             break
         url = getattr(entry, 'link', '')
         title = getattr(entry, 'title', '')
@@ -385,7 +423,7 @@ def main():
         # 🛡️ KIỂM TRA TRÙNG LẶP 2 LỚP: Nếu trùng Video ID HOẶC trùng Tiêu đề bài viết -> Bỏ qua ngay!
         if video_id in posts_by_id:
             old_post = posts_by_id[video_id]
-            if old_post.get("featured_media", 0) == 0:
+            if old_post.get("featured_media", 0) == 0 and updated_image_count < 100:
                 print(f"🛠️ Phát hiện bài viết cũ '{title[:35]}...' bị mất ảnh đại diện -> Đang tải bổ sung ảnh gốc...")
                 media_id, local_url = upload_image_to_wp(thumbnail_url, video_id)
                 if media_id and update_wp_post_featured_media(old_post["post_id"], media_id, local_url):
@@ -397,7 +435,7 @@ def main():
         elif entry_title_key and entry_title_key in seen_titles_map:
             old_post = seen_titles_map[entry_title_key]
             print(f"⏩ Bài viết có tiêu đề '{title[:35]}...' đã tồn tại trên web (ID {old_post['post_id']}), bỏ qua để chống trùng lặp.")
-            if old_post.get("featured_media", 0) == 0:
+            if old_post.get("featured_media", 0) == 0 and updated_image_count < 100:
                 media_id, local_url = upload_image_to_wp(thumbnail_url, video_id)
                 if media_id and update_wp_post_featured_media(old_post["post_id"], media_id, local_url):
                     updated_image_count += 1
