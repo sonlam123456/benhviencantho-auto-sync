@@ -117,22 +117,50 @@ def get_available_gemini_models():
     ]
 
 def get_fresh_cover_by_video_id(video_id):
-    """Lấy lại link ảnh bìa mới nhất từ API TikWM/TikTok cho video_id nếu link cũ trong RSS bị hết hạn (403)"""
+    """Lấy lại link ảnh bìa mới nhất từ 3 nguồn API (TikWM Single, oEmbed, TikWM Posts) cho video_id nếu link cũ bị hết hạn"""
     if not video_id:
         return None
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0 Safari/537.36"}
+    
+    # Phương pháp 1: Gọi TikWM API cho riêng Video ID
     try:
-        for cursor in [0, 1779879600001, 1776304800001]:
-            url = f"https://www.tikwm.com/api/user/posts?unique_id=bvquoctesis&count=36&cursor={cursor}"
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0 Safari/537.36"}, timeout=15)
-            if res.status_code == 200:
-                data = res.json().get("data", {})
-                for v in data.get("videos", []):
+        r1 = requests.get(f"https://www.tikwm.com/api/?url=https://www.tiktok.com/@bvquoctesis/video/{video_id}", headers=headers, timeout=12)
+        if r1.status_code == 200:
+            d1 = r1.json().get("data", {})
+            c1 = d1.get("origin_cover") or d1.get("cover")
+            if c1 and "http" in c1:
+                return c1
+    except Exception as e:
+        pass
+
+    # Phương pháp 2: Gọi TikTok oEmbed chính thức
+    try:
+        r2 = requests.get(f"https://www.tiktok.com/oembed?url=https://www.tiktok.com/@bvquoctesis/video/{video_id}", headers=headers, timeout=12)
+        if r2.status_code == 200:
+            c2 = r2.json().get("thumbnail_url")
+            if c2 and "http" in c2:
+                return c2
+    except Exception as e:
+        pass
+
+    # Phương pháp 3: Quét qua danh sách video mới nhất trên kênh
+    try:
+        cursor = 0
+        for _ in range(8):
+            r3 = requests.get(f"https://www.tikwm.com/api/user/posts?unique_id=bvquoctesis&count=50&cursor={cursor}", headers=headers, timeout=15)
+            if r3.status_code == 200:
+                d3 = r3.json().get("data", {})
+                for v in d3.get("videos", []):
                     if str(v.get("video_id")) == str(video_id):
-                        return v.get("origin_cover") or v.get("cover")
-                if not data.get("has_more"):
+                        c3 = v.get("origin_cover") or v.get("cover")
+                        if c3 and "http" in c3:
+                            return c3
+                cursor = d3.get("cursor", 0)
+                if not cursor or not d3.get("has_more"):
                     break
     except Exception as e:
-        print(f"⚠️ Lỗi tìm ảnh mới cho video {video_id}: {e}")
+        pass
+        
     return None
 
 def upload_image_to_wp(image_url, video_id=None):
@@ -157,9 +185,9 @@ def upload_image_to_wp(image_url, video_id=None):
         except Exception as e:
             pass
             
-    # Nếu tải từ link cũ (trong RSS) bị lỗi HTTP != 200 (như 403 Hết hạn), tự động lấy link gốc mới từ TikWM bằng video_id!
+    # Nếu tải từ link cũ (trong RSS) bị lỗi HTTP != 200 (như 403 Hết hạn), lập tức lấy link gốc từ 3 nguồn API đa tầng!
     if (not img_res or img_res.status_code != 200) and video_id:
-        print(f"🔄 Link ảnh trong RSS của video {video_id} bị hết hạn/lỗi (Status {img_res.status_code if img_res else 'Failed'}). Đang tự động lấy link ảnh mới từ API...")
+        print(f"🔄 Link ảnh cũ của video {video_id} bị hết hạn/lỗi. Đang tự động lấy link gốc chất lượng cao từ 3 nguồn API đa tầng...")
         fresh_url = get_fresh_cover_by_video_id(video_id)
         if fresh_url:
             try:
@@ -168,7 +196,7 @@ def upload_image_to_wp(image_url, video_id=None):
                 pass
                 
     if not img_res or img_res.status_code != 200:
-        print(f"⚠️ Không thể tải ảnh từ TikTok cho video {video_id} (Status {img_res.status_code if img_res else 'Failed'})")
+        print(f"⚠️ Không thể tải ảnh từ TikTok cho video {video_id} sau khi đã thử tất cả 3 nguồn API.")
         return None, None
         
     try:
@@ -395,7 +423,8 @@ def main():
                 time.sleep(1.5)
     
     for entry in feed.entries:
-        if posted_count >= 15:
+        if posted_count >= 2:
+            print("🛑 Đã đạt giới hạn đăng 2 bài viết mới mỗi lượt chạy (3 lần/ngày = 6 bài/ngày). Dừng viết bài mới.")
             break
         url = getattr(entry, 'link', '')
         title = getattr(entry, 'title', '')
