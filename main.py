@@ -240,30 +240,232 @@ def update_wp_post_featured_media(post_id, media_id, local_img_url=None):
 
 def generate_seo_article(title, url, video_id, local_img_url, models_list):
     if not GEMINI_API_KEY:
-        print("❌ LỖI: Chưa có GEMINI_API_KEY trong cấu hình Secrets.")
+        print("❌ LỖI NGHIÊM TRỌNG: Chưa cấu hình Secret GEMINI_API_KEY trên GitHub!")
         return None
         
     prompt = f"""
-Bạn là Bác sĩ Chuyên khoa & Biên tập viên Y tế Cao cấp thuộc Cổng thông tin Y khoa miền Tây "Bệnh Viện Cần Thơ" (Website: https://benhviencantho.com/ & Bệnh viện Đa khoa Quốc tế S.I.S Cần Thơ).
+Bạn là Bác sĩ Chuyên khoa & Biên tập viên Y tế Cao cấp thuộc Cổng thông tin Y khoa miền Tây "Bệnh Viện Cần Thơ" (Website: https://benhviencantho.com/). Bạn đang ứng dụng kỹ năng "LamContent" - kết hợp giữa Copywriting thuyết phục (khung PAS), SEO Y khoa (E-E-A-T), và Vibe Ái Ngữ (Thấu cảm, chữa lành, không hứa hẹn suông).
 
-Hãy viết một bài phân tích y khoa & tư vấn chăm sóc sức khỏe CHUẨN SEO GOOGLE E-E-A-T (Chuyên môn - Thẩm quyền - Tin cậy) dài khoảng 1000 - 1200 từ dựa trên video TikTok chuyên môn sau:
-- Tiêu đề chia sẻ y khoa: {title}
-- Link video tham chiếu: {url}
+Hãy viết một bài phân tích y khoa CHUẨN SEO dài 1000 - 1200 từ dựa trên video TikTok sau:
+- Tiêu đề video: {title}
+- Link video gốc: {url}
+- Link ảnh minh họa: {local_img_url or ''}
 
-QUY TẮC TỐI ƯU SEO & HIỂN THỊ Y KHOA:
-1. Từ khóa chính: Trích xuất ngay 1 từ khóa y khoa cốt lõi nhất từ tiêu đề (ví dụ: "Đột quỵ", "Suy tim", "Phình mạch máu não", "Đau dạ dày") và phải xuất hiện tự nhiên ít nhất 4-5 lần trải đều toàn bài.
-2. Phải lập tự động 4 nhóm từ khóa ngách (Niche Keyword Matrix): Dựa vào chuyên khoa/chủ đề cụ thể của video (Đột quỵ, Tim mạch, Thần kinh, Cơ xương khớp, Thận niệu...), bạn BẮT BUỘC phải tự tổng hợp và lồng ghép thật tự nhiên (đúng ngữ cảnh y khoa, câu cú mượt mà) đầy đủ 4 nhóm từ khóa ngách sau vào các thẻ H2/H3 hoặc đoạn nội dung:
-   - Nhóm Bệnh viện/Phòng khám: "bệnh viện đa khoa quốc tế SIS Cần Thơ", "bệnh viện Cần Thơ", "phòng khám chuyên khoa Cần Thơ", "bác sĩ giỏi Cần Thơ".
-   - Nhóm Xét nghiệm/Tầm soát: "chụp MRI 3 Tesla", "tầm soát đột quỵ", "khám tổng quát", "xét nghiệm máu", "siêu âm mạn tính".
-   - Nhóm Cấp cứu/Điều trị: "cấp cứu đột quỵ", "can thiệp mạch máu não", "phẫu thuật thần kinh", "cấp cứu 24/7", "điều trị nội khoa".
-   - Nhóm Vị trí địa lý (Local SEO): "miền Tây", "Đồng bằng sông Cửu Long", "Cần Thơ", "Hậu Giang", "Vĩnh Long", "An Giang".
+CẤU TRÚC BÀI VIẾT BẮT BUỘC (TUÂN THỦ LAMCONTENT & PAS):
+- H1: <h1 style="color: #0056b3; font-size: 24px;">[Tiêu đề thu hút, đồng cảm với bệnh nhân]</h1> (KHÔNG TRÙNG tiêu đề video).
+- Đoạn mở đầu (Pain - Nỗi đau & Ái ngữ): Thấu cảm sâu sắc với nỗi lo lắng, sự mệt mỏi của bệnh nhân khi đối mặt với triệu chứng này. Tránh Toxic Positivity (không nói "đừng lo lắng", hãy nói "chúng tôi hiểu sự mệt mỏi của bạn"). Nhắc đến "Bệnh viện Cần Thơ" ngay trong 2 câu đầu tiên (bôi đậm <strong>Bệnh viện Cần Thơ</strong>).
+- H2 số 1 (Agitate - Xoáy sâu & Chuyên môn E-E-A-T): Giải thích cặn kẽ cơ chế bệnh sinh theo video. Phân tích hậu quả nếu trì hoãn thăm khám. Lồng ghép từ khóa: [Dịch vụ/Bệnh] + [ở đâu / tại Cần Thơ].
+- H2 số 2 (Solution - Giải pháp chữa lành): Phân tích hướng điều trị, khích lệ bệnh nhân bằng năng lượng bình an. Lồng ghép từ khóa: Bác sĩ giỏi Cần Thơ.
+- H2 số 3: Chi phí & Hướng dẫn thủ tục BHYT tại Bệnh viện S.I.S Cần Thơ.
 
-TIÊU CHUẨN BỐ CỤC & VĂN PHONG Y KHOA:
-- Sử dụng HTML semantic: Có <h1> (tuyệt đối không trùng tiêu đề bài), ít nhất ba <h2>, và nhiều <h3>.
-- Viết văn phong chuyên gia y tế: Lời lẽ thấu cảm, khoa học, trấn an người bệnh, dễ hiểu nhưng học thuật.
-- Đoạn mở đầu (Lead paragraph): Gây chú ý bằng thực trạng bệnh lý, nỗi đau của người bệnh và dẫn dắt vào chủ đề chính một cách khoa học.
-- Đoạn giữa (Body): Giải thích cặn kẽ cơ chế bệnh sinh, nguyên nhân, triệu chứng cảnh báo sớm, và giải pháp phòng ngừa/điều trị (luôn nhắc đến tầm quan trọng của việc thăm khám sớm tại cơ sở y tế uy tín).
-- KHÔNG BAO GIỜ viết những cụm từ như: "Dưới đây là bài viết...", "Trong video này...", "Theo tiêu đề...". Viết thẳng vào vấn đề y khoa.
+QUY TẮC LAMCONTENT & SEO (MANDATORY RULE):
+1. TRẢ LỜI THẲNG BẰNG HTML THUẦN TÚY (<h2>, <p>, <ul>). KHÔNG dùng markdown ```html.
+2. KHÔNG GIỚI THIỆU (như "Dưới đây là bài viết..."), KHÔNG GIẢI THÍCH thêm ở cuối bài.
+3. Từ khóa: Phải lặp lại tự nhiên các cụm "Bệnh viện Cần Thơ", "S.I.S Cần Thơ", "tầm soát đột quỵ", "khám tổng quát", "bác sĩ giỏi miền Tây", "chụp MRI 3 Tesla". Bôi đậm <strong> cho ít nhất 5 từ khóa ngách.
+4. Hình ảnh minh họa: BẮT BUỘC chèn đoạn mã này ngay dưới H1:
+<p style="text-align: center; margin: 20px 0;"><img src="{local_img_url or ''}" alt="Bệnh viện Cần Thơ - {title}" style="max-width: 100%; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);" /></p>
+5. Kêu gọi hành động (CTA) bằng Ái Ngữ: Cuối bài, BẮT BUỘC bọc khối HTML sau để khuyên bệnh nhân đặt lịch:
+<div style="background-color: #f8fcfd; border-left: 5px solid #0056b3; padding: 20px; margin-top: 30px; border-radius: 4px;">
+    <h3 style="color: #0056b3; margin-top: 0;">Bệnh Viện Cần Thơ - Đồng Hành Cùng Bạn Trên Hành Trình Chữa Lành</h3>
+    <p>Sức khỏe là tài sản quý giá nhất, và chúng tôi thấu hiểu những lo âu của bạn khi cơ thể lên tiếng. Đừng tự gồng gánh nỗi đau một mình. Tại <strong>Bệnh viện Đa khoa Quốc tế S.I.S Cần Thơ</strong>, đội ngũ y bác sĩ tận tâm cùng hệ thống máy móc hiện đại (MRI 3 Tesla, CT 128) luôn sẵn sàng lắng nghe và tìm ra giải pháp tốt nhất cho bạn.</p>
+    <ul style="list-style-type: none; padding-left: 0;">
+        <li>📍 <strong>Địa chỉ:</strong> 397 Nguyễn Văn Cừ nối dài, P. An Bình, Q. Ninh Kiều, Cần Thơ</li>
+        <li>🌐 <strong>Website:</strong> <a href="https://benhviencantho.com/" style="text-decoration: none; color: #0056b3;">benhviencantho.com</a></li>
+        <li>📞 <strong>Tổng đài tư vấn miễn phí:</strong> 1800 1115</li>
+    </ul>
+</div>
+6. Nhúng Video Gốc: Cuối cùng, BẮT BUỘC chèn mã HTML nhúng video sau:
+<div style="display: flex; justify-content: center; margin: 25px auto;">
+  <blockquote class="tiktok-embed" cite="https://www.tiktok.com/@bvquoctesis/video/{video_id}" data-video-id="{video_id}" style="max-width: 360px; min-width: 325px; border-radius: 16px;">
+    <section><a target="_blank" href="https://www.tiktok.com/@bvquoctesis">@bvquoctesis</a></section>
+  </blockquote>
+</div><script async src="https://www.tiktok.com/embed.js"></script>
+"""
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    for model in models_list:
+        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+        for attempt in range(2):
+            try:
+                res = requests.post(api_url, json=payload, timeout=60)
+                if res.status_code == 200:
+                    data = res.json()
+                    if "candidates" in data and len(data["candidates"]) > 0:
+                        html_content = data["candidates"][0]["content"]["parts"][0]["text"]
+                        html_content = re.sub(r'^```html\n|```$', '', html_content, flags=re.MULTILINE).strip()
+                        return html_content
+                elif res.status_code == 503:
+                    print(f"⚠️ Model {model} hơi nghẽn mạng (503), chờ 5s thử lại...")
+                    time.sleep(5)
+                elif res.status_code == 429:
+                    print(f"⚠️ Model {model} bị giới hạn tần suất (429 Quota Exceeded), chờ 10s...")
+                    time.sleep(10)
+                elif res.status_code == 404:
+                    print(f"⚠️ Model {model} không tìm thấy (404), đang thử model tiếp theo...")
+                    break
+                elif res.status_code in [400, 403]:
+                    print(f"❌ LỖI API KEY GEMINI ({res.status_code}): Secret GEMINI_API_KEY bị sai, hết hạn hoặc không hợp lệ!")
+                    return None
+                else:
+                    print(f"⚠️ Model {model} báo lỗi ({res.status_code}): {res.text[:150]}")
+                    break
+            except Exception as e:
+                print(f"⚠️ Lỗi kết nối model {model}: {e}")
+                time.sleep(3)
+            
+    print("❌ Không thể tạo bài viết từ AI Gemini sau khi đã thử tất cả các model.")
+    return None
 
-BỐ CỤC BẮT BUỘC (Sử dụng trực tiếp HTML):
-1. [Nội dung chuyên sâu
+def create_wp_post(clean_title, content, media_id=None, local_img_url=None):
+    if not WP_URL or not WP_USERNAME or not WP_PASSWORD:
+        print("❌ Lỗi: Chưa cấu hình đủ Secrets WordPress.")
+        return False
+        
+    session = requests.Session()
+    session.auth = (WP_USERNAME, WP_PASSWORD)
+    session.headers.update({"Content-Type": "application/json"})
+    
+    final_content = content
+    if local_img_url and local_img_url not in content:
+        img_html = f'<p style="text-align: center; margin: 20px 0;"><img src="{local_img_url}" alt="Bệnh viện Cần Thơ - {clean_title[:50]}" style="max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);" /></p>\n'
+        final_content = img_html + content
+        
+    payload = {
+        "title": clean_title[:80], # Bỏ tiền tố [Y Khoa Cần Thơ]
+        "content": final_content,
+        "status": "publish"
+    }
+    if media_id:
+        payload["featured_media"] = media_id
+        
+    try:
+        res = session.post(WP_URL, json=payload, timeout=30)
+        if res.status_code in [200, 201]:
+            print(f"✅ ĐÃ ĐĂNG THÀNH CÔNG BÀI LÊN BENHVIENCANTHO.COM: {clean_title[:55]} (Media ID: {media_id})")
+            return True
+        elif res.status_code == 401:
+            print("❌ LỖI 401 WORDPRESS: Tài khoản trong Secret WP_USERNAME không có quyền đăng bài (Role phải là Administrator hoặc Author)!")
+            return False
+        else:
+            print(f"❌ Lỗi đăng WordPress ({res.status_code}): {res.text}")
+            return False
+    except Exception as e:
+        print(f"❌ Lỗi kết nối WordPress: {e}")
+        return False
+
+def main():
+    print(f"🔍 Đang tải danh sách video từ RSS Benhviencantho.com: {RSS_FEED_URL}")
+    
+    try:
+        rss_res = requests.get(RSS_FEED_URL, timeout=15)
+        if rss_res.status_code != 200:
+            print(f"❌ LỖI NGHIÊM TRỌNG: Link RSS trả về mã lỗi HTTP {rss_res.status_code}!")
+            return
+    except Exception as e:
+        print(f"❌ Lỗi không thể kết nối đến link RSS: {e}")
+        return
+
+    feed = feedparser.parse(rss_res.content)
+    if not feed.entries:
+        print("❌ LỖI NGHIÊM TRỌNG: Link RSS không chứa video nào (Danh sách trống)!")
+        return
+        
+    print(f"🎯 Tìm thấy {len(feed.entries)} video trong link RSS của Benhviencantho.com.")
+    posts_by_id, seen_titles_map = get_existing_wp_posts()
+    
+    models_list = get_available_gemini_models()
+    if not models_list:
+        print("❌ Lỗi: Không có model AI nào khả dụng cho API Key của bạn.")
+        return
+    
+    posted_count = 0
+    updated_image_count = 0
+    
+    # 🛠️ QUÉT VÀ TỰ ĐỘNG KHÔI PHỤC ẢNH CHO CÁC BÀI VIẾT CŨ TRÊN WORDPRESS (Sửa tối đa 100 bài/lần chạy)
+    print(f"🛠️ Đang quét tự động danh sách bài viết cũ trên Benhviencantho.com để phát hiện & sửa triệt để lỗi ảnh...")
+    checked_ids = set()
+    for post_info in list(posts_by_id.values()) + list(seen_titles_map.values()):
+        if updated_image_count >= 100:
+            print("🛑 Đã sửa khôi phục 100 bài viết trong 1 lượt chạy (giới hạn an toàn). Các bài lỗi còn lại sẽ tự khôi phục tiếp ở lượt chạy sau.")
+            break
+        post_id = post_info["post_id"]
+        if post_id in checked_ids:
+            continue
+        checked_ids.add(post_id)
+        
+        feat_id = post_info.get("featured_media", 0)
+        content = post_info.get("content", "")
+        title = post_info.get("title", "")
+        vid = post_info.get("vid")
+        
+        # Nếu bài viết không có ảnh đại diện HOẶC trong nội dung có link tiktokcdn bị lỗi/hết hạn
+        if feat_id == 0 or "tiktokcdn" in content:
+            print(f"🛠️ Phát hiện bài viết ID {post_id} ('{title[:35]}...') bị lỗi/mất ảnh -> Đang tự động khôi phục từ TikWM API...")
+            media_id, local_url = upload_image_to_wp("", vid)
+            if media_id and update_wp_post_featured_media(post_id, media_id, local_url):
+                updated_image_count += 1
+                post_info["featured_media"] = media_id
+                time.sleep(1.5)
+    
+    for entry in feed.entries:
+        if posted_count >= 2:
+            print("🛑 Đã đạt giới hạn đăng 2 bài viết mới mỗi lượt chạy (3 lần/ngày = 6 bài/ngày). Dừng viết bài mới.")
+            break
+        url = getattr(entry, 'link', '')
+        title = getattr(entry, 'title', '')
+        video_id = extract_video_id(url)
+        
+        # 🎯 TRÍCH XUẤT THUMBNAIL TỪ DESCRIPTION HOẶC ENCLOSURES
+        thumbnail_url = ""
+        if hasattr(entry, 'media_thumbnail') and len(entry.media_thumbnail) > 0:
+            thumbnail_url = entry.media_thumbnail[0]['url']
+        elif hasattr(entry, 'enclosures') and len(entry.enclosures) > 0:
+            thumbnail_url = entry.enclosures[0]['url']
+            
+        if not thumbnail_url:
+            desc_text = getattr(entry, 'summary', '') or getattr(entry, 'description', '')
+            match_img = re.search(r'<img[^>]+src=["\'](https?://[^"\']+)["\']', desc_text, re.IGNORECASE)
+            if match_img:
+                thumbnail_url = match_img.group(1)
+                
+        if not video_id:
+            continue
+            
+        # Chuẩn hóa tiêu đề từ RSS để đối chiếu 2 lớp
+        entry_title_key = re.sub(r'\[Y Khoa Cần Thơ\]|\s+|#.*$', ' ', title).strip().lower()[:30]
+        
+        # 🛡️ KIỂM TRA TRÙNG LẶP 2 LỚP: Nếu trùng Video ID HOẶC trùng Tiêu đề bài viết -> Bỏ qua ngay!
+        if video_id in posts_by_id:
+            old_post = posts_by_id[video_id]
+            if old_post.get("featured_media", 0) == 0 and updated_image_count < 100:
+                print(f"🛠️ Phát hiện bài viết cũ '{title[:35]}...' bị mất ảnh đại diện -> Đang tải bổ sung ảnh gốc...")
+                media_id, local_url = upload_image_to_wp(thumbnail_url, video_id)
+                if media_id and update_wp_post_featured_media(old_post["post_id"], media_id, local_url):
+                    updated_image_count += 1
+                    time.sleep(2)
+            else:
+                print(f"⏩ Video ID {video_id} ('{title[:30]}...') đã tồn tại trên web & đã có ảnh, bỏ qua.")
+            continue
+        elif entry_title_key and entry_title_key in seen_titles_map:
+            old_post = seen_titles_map[entry_title_key]
+            print(f"⏩ Bài viết có tiêu đề '{title[:35]}...' đã tồn tại trên web (ID {old_post['post_id']}), bỏ qua để chống trùng lặp.")
+            if old_post.get("featured_media", 0) == 0 and updated_image_count < 100:
+                media_id, local_url = upload_image_to_wp(thumbnail_url, video_id)
+                if media_id and update_wp_post_featured_media(old_post["post_id"], media_id, local_url):
+                    updated_image_count += 1
+                    time.sleep(2)
+            continue
+            
+        print(f"✍️ Đang viết bài y khoa chuẩn SEO cho video mới: {title[:50]}...")
+        media_id, local_img_url = upload_image_to_wp(thumbnail_url, video_id)
+        
+        article_html = generate_seo_article(title, url, video_id, local_img_url, models_list)
+        if article_html:
+            if create_wp_post(title, article_html, media_id, local_img_url):
+                posted_count += 1
+            time.sleep(5)
+            
+    print(f"ℹ️ Hoàn tất chạy! Kết quả: Đăng mới {posted_count} bài viết, và Tự động phục hồi ảnh cho {updated_image_count} bài viết cũ.")
+
+if __name__ == "__main__":
+    main()
