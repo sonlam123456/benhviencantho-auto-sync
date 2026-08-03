@@ -354,4 +354,118 @@ def create_wp_post(clean_title, content, media_id=None, local_img_url=None):
         return False
 
 def main():
-    print(f"🔍 Đang tải danh sách video từ RSS Benhvienc
+    print(f"🔍 Đang tải danh sách video từ RSS Benhviencantho.com: {RSS_FEED_URL}")
+    
+    try:
+        rss_res = requests.get(RSS_FEED_URL, timeout=60)
+        if rss_res.status_code != 200:
+            print(f"❌ LỖI NGHIÊM TRỌNG: Link RSS trả về mã lỗi HTTP {rss_res.status_code}!")
+            return
+    except Exception as e:
+        print(f"❌ Lỗi không thể kết nối đến link RSS: {e}")
+        return
+
+    feed = feedparser.parse(rss_res.content)
+    if not feed.entries:
+        print("❌ LỖI NGHIÊM TRỌNG: Link RSS không chứa video nào (Danh sách trống)!")
+        return
+        
+    print(f"🎯 Tìm thấy {len(feed.entries)} video trong link RSS của Benhviencantho.com.")
+    posts_by_id, seen_titles_map = get_existing_wp_posts()
+    
+    models_list = get_available_gemini_models()
+    if not models_list:
+        print("❌ Lỗi: Không có model AI nào khả dụng cho API Key của bạn.")
+        return
+    
+    posted_count = 0
+    updated_image_count = 0
+    
+    # 🛠️ QUÉT VÀ TỰ ĐỘNG KHÔI PHỤC ẢNH CHO CÁC BÀI VIẾT CŨ TRÊN WORDPRESS (Sửa tối đa 100 bài/lần chạy)
+    print(f"🛠️ Đang quét tự động danh sách bài viết cũ trên Benhviencantho.com để phát hiện & sửa triệt để lỗi ảnh...")
+    checked_ids = set()
+    for post_info in list(posts_by_id.values()) + list(seen_titles_map.values()):
+        if updated_image_count >= 100:
+            print("🛑 Đã sửa khôi phục 100 bài viết trong 1 lượt chạy (giới hạn an toàn). Các bài lỗi còn lại sẽ tự khôi phục tiếp ở lượt chạy sau.")
+            break
+        post_id = post_info["post_id"]
+        if post_id in checked_ids:
+            continue
+        checked_ids.add(post_id)
+        
+        feat_id = post_info.get("featured_media", 0)
+        content = post_info.get("content", "")
+        title = post_info.get("title", "")
+        vid = post_info.get("vid")
+        
+        # Nếu bài viết không có ảnh đại diện HOẶC trong nội dung có link tiktokcdn bị lỗi/hết hạn
+        if feat_id == 0 or "tiktokcdn" in content:
+            print(f"🛠️ Phát hiện bài viết ID {post_id} ('{title[:35]}...') bị lỗi/mất ảnh -> Đang tự động khôi phục từ TikWM API...")
+            media_id, local_url = upload_image_to_wp("", vid)
+            if media_id and update_wp_post_featured_media(post_id, media_id, local_url):
+                updated_image_count += 1
+                post_info["featured_media"] = media_id
+                time.sleep(1.5)
+    
+    for entry in feed.entries:
+        if posted_count >= 2:
+            print("🛑 Đã đạt giới hạn đăng 2 bài viết mới mỗi lượt chạy (3 lần/ngày = 6 bài/ngày). Dừng viết bài mới.")
+            break
+        url = getattr(entry, 'link', '')
+        title = getattr(entry, 'title', '')
+        video_id = extract_video_id(url)
+        
+        # 🎯 TRÍCH XUẤT THUMBNAIL TỪ DESCRIPTION HOẶC ENCLOSURES
+        thumbnail_url = ""
+        if hasattr(entry, 'media_thumbnail') and len(entry.media_thumbnail) > 0:
+            thumbnail_url = entry.media_thumbnail[0]['url']
+        elif hasattr(entry, 'enclosures') and len(entry.enclosures) > 0:
+            thumbnail_url = entry.enclosures[0]['url']
+            
+        if not thumbnail_url:
+            desc_text = getattr(entry, 'summary', '') or getattr(entry, 'description', '')
+            match_img = re.search(r'<img[^>]+src=["\'](https?://[^"\']+)["\']', desc_text, re.IGNORECASE)
+            if match_img:
+                thumbnail_url = match_img.group(1)
+                
+        if not video_id:
+            continue
+            
+        # Chuẩn hóa tiêu đề từ RSS để đối chiếu 2 lớp
+        entry_title_key = re.sub(r'\[Y Khoa Cần Thơ\]|\s+|#.*$', ' ', title).strip().lower()[:30]
+        
+        # 🛡️ KIỂM TRA TRÙNG LẶP 2 LỚP: Nếu trùng Video ID HOẶC trùng Tiêu đề bài viết -> Bỏ qua ngay!
+        if video_id in posts_by_id:
+            old_post = posts_by_id[video_id]
+            if old_post.get("featured_media", 0) == 0 and updated_image_count < 100:
+                print(f"🛠️ Phát hiện bài viết cũ '{title[:35]}...' bị mất ảnh đại diện -> Đang tải bổ sung ảnh gốc...")
+                media_id, local_url = upload_image_to_wp(thumbnail_url, video_id)
+                if media_id and update_wp_post_featured_media(old_post["post_id"], media_id, local_url):
+                    updated_image_count += 1
+                    time.sleep(2)
+            else:
+                print(f"⏩ Video ID {video_id} ('{title[:30]}...') đã tồn tại trên web & đã có ảnh, bỏ qua.")
+            continue
+        elif entry_title_key and entry_title_key in seen_titles_map:
+            old_post = seen_titles_map[entry_title_key]
+            print(f"⏩ Bài viết có tiêu đề '{title[:35]}...' đã tồn tại trên web (ID {old_post['post_id']}), bỏ qua để chống trùng lặp.")
+            if old_post.get("featured_media", 0) == 0 and updated_image_count < 100:
+                media_id, local_url = upload_image_to_wp(thumbnail_url, video_id)
+                if media_id and update_wp_post_featured_media(old_post["post_id"], media_id, local_url):
+                    updated_image_count += 1
+                    time.sleep(2)
+            continue
+            
+        print(f"✍️ Đang viết bài y khoa chuẩn SEO cho video mới: {title[:50]}...")
+        media_id, local_img_url = upload_image_to_wp(thumbnail_url, video_id)
+        
+        article_html = generate_seo_article(title, url, video_id, local_img_url, models_list)
+        if article_html:
+            if create_wp_post(title, article_html, media_id, local_img_url):
+                posted_count += 1
+            time.sleep(5)
+            
+    print(f"ℹ️ Hoàn tất chạy! Kết quả: Đăng mới {posted_count} bài viết, và Tự động phục hồi ảnh cho {updated_image_count} bài viết cũ.")
+
+if __name__ == "__main__":
+    main()
